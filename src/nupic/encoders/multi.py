@@ -35,6 +35,7 @@ from nupic.encoders.geospatial_coordinate import GeospatialCoordinateEncoder
 # multiencoder must be imported last because it imports * from this module!
 from nupic.encoders.utils import bitsToString
 from nupic.encoders.random_distributed_scalar import RandomDistributedScalarEncoder
+from nupic.encoders.random_distributed_category import RandomDistributedCategoryEncoder
 
 
 
@@ -50,7 +51,8 @@ _CLASS_ATTR_MAP = {
   DeltaEncoder: "deltaEncoder",
   PassThroughEncoder: "passThroughEncoder",
   SparsePassThroughEncoder: "sparsePassThroughEncoder",
-  RandomDistributedScalarEncoder: "randomDistributedScalarEncoder"
+  RandomDistributedScalarEncoder: "randomDistributedScalarEncoder",
+  RandomDistributedCategoryEncoder: "randomDistributedCategoryEncoder"
 }
 
 # Invert for fast lookup in MultiEncoder.read()
