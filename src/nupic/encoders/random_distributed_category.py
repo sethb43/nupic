@@ -1,24 +1,4 @@
-# ----------------------------------------------------------------------
-# Numenta Platform for Intelligent Computing (NuPIC)
-# Copyright (C) 2013-2015, Numenta, Inc.  Unless you have an agreement
-# with Numenta, Inc., for a separate license for this software code, the
-# following terms and conditions apply:
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License version 3 as
-# published by the Free Software Foundation.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see http://www.gnu.org/licenses.
-#
-# http://numenta.org/licenses/
-# ----------------------------------------------------------------------
-
+#Author: Seth Barnard
 import pprint
 import sys
 
@@ -28,10 +8,9 @@ from nupic.data.fieldmeta import FieldMetaType
 from nupic.encoders.base import Encoder
 from nupic.bindings.math import Random as NupicRandom
 
-
 class RandomDistributedCategoryEncoder(Encoder):
 
-  def __init__(self, w=21, n=400, o=5, name=None, seed=42, verbosity=0):
+  def __init__(self, w=21, n=400, name=None, seed=42, verbosity=0):
     """Constructor
 
     @param w Number of bits to set in output. w must be odd to avoid centering
@@ -43,11 +22,6 @@ class RandomDistributedCategoryEncoder(Encoder):
                     large enough such that there is enough room to select
                     new representations as the range grows. With w=21 a value
                     of n=400 is typical. The class enforces n > 6*w.
-                    
-    @param o Number of bits that are allowed to overlap with any other single 
-                    representation.  Note that this parameter only refers to 
-                    a specific representation, more than one(or many) 
-                    representations can overlap by this value.
 
     @param name An optional string which will become part of the description.
 
@@ -64,31 +38,20 @@ class RandomDistributedCategoryEncoder(Encoder):
     # Validate inputs
     if (w <= 0) or (w%2 == 0):
       raise ValueError("w must be an odd positive integer")
-
+ 
     if (n <= 6*w) or (not isinstance(n, int)):
       raise ValueError("n must be an int strictly greater than 6*w. For "
                        "good results we recommend n be strictly greater "
                        "than 11*w")
-      
-    if (not isinstance(o, int)) or (o < 0):
-      raise ValueError("O must be a positive integer.")
-    
-    if (o < w/4):
-      raise ValueError("O must be greater than W/4.")
-    
-    if (o < w/3):
-      print "WARNING.  WARNING.  WARNING. WARNING."
-      print "With such a small O value, you are asking for trouble.  New categories"
-      print " will require more and more CPU time as the number of categories increase."
 
     self.encoders = None
     self.verbosity = verbosity
     self.w = w
     self.n = n
     self.overlapLevel = 0
-    self.maxOverlap = o
     self.bucketIndexMap = {"NOT_DEFINED":0}
-
+    self.currOverlapLevel = 0;
+    
     # initialize the random number generators
     self._seed(seed)
 
@@ -144,11 +107,14 @@ class RandomDistributedCategoryEncoder(Encoder):
 
     if x in self.bucketIndexMap:
       bucketIdx = self.bucketIndexMap[x]
-    else:  
-      bucketIdx = max(self.bucketIndexMap.values())+1
-      if self.verbosity >= 2:
-        print "Index is not found for ", x, "Created new index", bucketIdx
-      self.bucketIndexMap[x] = bucketIdx
+    else:
+      if self.currOverlapLevel>=self.w:
+        bucketIdx = 0
+      else:
+        bucketIdx = max(self.bucketIndexMap.values())+1
+        if self.verbosity >= 2:
+          print "Index is not found for ", x, "Created new index", bucketIdx
+        self.bucketIndexMap[x] = bucketIdx
 
     return [bucketIdx]
 
@@ -156,8 +122,7 @@ class RandomDistributedCategoryEncoder(Encoder):
   def mapBucketIndexToNonZeroBits(self, index):
     """
     Given a bucket index, return the list of non-zero bits. If the bucket
-    index does not exist, it is created. If the index falls outside our range
-    we clip it.
+    index does not exist, it is created.
     """
     if not self.bucketMap.has_key(index):
       if self.verbosity >= 2:
@@ -186,56 +151,72 @@ class RandomDistributedCategoryEncoder(Encoder):
 
 
   def _createBucket(self, index):
-
     self.bucketMap[index] = self.createNewRepresentation(index)
-
-  #=============================================================================
-  # def createNewRepresentation(self, index):
-  #   newRepresentation = [None]*self.w
-  #   bitCatUsageCountMap = {}
-  #   for x in xrange(self.w):
-  #     
-  #     newRepresentation[x] = self.random.getUInt32(self.n)
-  #     while not self.chosenBuckitIndexIsOk(newRepresentation[x], bitCatUsageCountMap):
-  #       newRepresentation[x] = self.random.getUInt32(self.n)
-  #     
-  #     self.bitToCatIndexList[newRepresentation[x]].append(index)
-  #     
-  #   return newRepresentation
-  # 
-  # def chosenBuckitIndexIsOk(self, bucketIndex, bitCatUsageCountMap):
-  #   for c in self.bitToCatIndexList[bucketIndex]:
-  #     if c in bitCatUsageCountMap:
-  #       if bitCatUsageCountMap[c]+1 > self.maxOverlap:
-  #         return False
-  #       else: 
-  #         bitCatUsageCountMap[c] = bitCatUsageCountMap[c]+1
-  #     else:
-  #       bitCatUsageCountMap[c] = 1
-  #   return True
-  #=============================================================================
   
   def createNewRepresentation(self, index):
+    currUsageCountMap = {}
     newRepresentation = [None]*self.w
-
-      
+    
+    for x in xrange(self.w):
+      valid = False
+      while not valid:
+        currBit, currLvl = self.findFirstLowestBit()
+        count = 0
+        valid = self.chosenBitIsOk(currBit, currUsageCountMap)
+        while not valid and count<self.n:
+          count += 1
+          currBit = self.findNextEqualBit(currBit, currLvl)
+          if currBit is -1:
+            currBit = 0
+            currLvl += 1
+          else:
+            valid = self.chosenBitIsOk(currBit, currUsageCountMap)
+        if not valid and count>=self.n:
+          self.currOverlapLevel +=1
+          print self.currOverlapLevel
+          print len(self.bucketIndexMap)-1
+          
+      newRepresentation[x]=currBit
+      self.bitToCatIndexList[currBit].append(index)
     return newRepresentation
   
-  def getFirstMinUsedIndexCount(self, dictList):
-    minUsedIndex = 0
-    minUsedCount = self.maxOverlap+1
-    for k in dictList.keys:
-      if(len(dictList[k])<minUsedCount):
-        minUsedCount = len(dictList[k])
-        minUsedIndex = k
-    return (minUsedIndex, minUsedCount)
+  def findNextEqualBit(self, index, val):
+    nextBit = -1
+    for x in xrange(index+1, self.n):
+      if(len(self.bitToCatIndexList[x])==val):
+        nextBit = x
+        break
+    return nextBit
 
+  def chosenBitIsOk(self, index, currUsageCountMap):
+    valid = True
+    for c in self.bitToCatIndexList[index]:
+      if c in currUsageCountMap and currUsageCountMap[c]+1>self.currOverlapLevel:
+        valid = False
+        break
+    
+    if valid:
+      for c in self.bitToCatIndexList[index]:
+        if c in currUsageCountMap:
+          currUsageCountMap[c] = currUsageCountMap[c]+1
+        else:
+          currUsageCountMap[c] = 1
+    return valid
+
+  def findFirstLowestBit(self, exclusionVal=0):
+    currMin = len(self.bitToCatIndexList[0])
+    currKey = 0
+    for x in xrange(self.n):
+      if len(self.bitToCatIndexList[x])<currMin and len(self.bitToCatIndexList[x])>=exclusionVal:
+        currMin = len(self.bitToCatIndexList[x])
+        currKey = x
+    return (currKey, currMin)
+  
   def dump(self):
     print "RandomDistributedCategoryEncoder:"
     print "  w:          %d" % self.w
     print "  n:          %d" % self.getWidth()
     print "  name:       %s" % self.name
-    print "  s:          %s" % self.maxOverlap
     if self.verbosity > 2:
       print "  All buckets:     "
       pprint.pprint(self.bucketMap)
@@ -255,6 +236,8 @@ class RandomDistributedCategoryEncoder(Encoder):
 
     return encoder
 
+  def getCurrentOverlapLevel(self):
+    return self.currOverlapLevel
 
   def write(self, proto):
     proto.w = self.w
