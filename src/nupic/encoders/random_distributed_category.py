@@ -155,27 +155,40 @@ class RandomDistributedCategoryEncoder(Encoder):
   
   def createNewRepresentation(self, index):
     currUsageCountMap = {}
+    """Setup new sdr"""
     newRepresentation = [None]*self.w
     
+    """Find w bits to use in new sdr"""
     for x in xrange(self.w):
       valid = False
       while not valid:
+        """Look for lowest used bit first"""
         currBit, currLvl = self.findFirstLowestBit()
         count = 0
+        """Validate that chosen bit satisfies overlap restrictions"""
         valid = self.chosenBitIsOk(currBit, currUsageCountMap)
+        
+        """If invalid, iterate through rest of bits with current bit usage count"""
         while not valid and count<self.n:
           count += 1
           currBit = self.findNextEqualBit(currBit, currLvl)
+          """If the end of n bits is reached, increment usage level and start back at beginning
+            otherwise validate chosen bit"""
           if currBit is -1:
             currBit = 0
             currLvl += 1
           else:
             valid = self.chosenBitIsOk(currBit, currUsageCountMap)
+            
+        """If all bits have been searched and no valid bits found,
+          increment overlap level.  Next round of chosen bits will be validated 
+          with incremented overlap count"""
         if not valid and count>=self.n:
           self.currOverlapLevel +=1
           print self.currOverlapLevel
           print len(self.bucketIndexMap)-1
-          
+      
+      """Once a valid bit is found, add it to sdr and add tracking info"""
       newRepresentation[x]=currBit
       self.bitToCatIndexList[currBit].append(index)
     return newRepresentation
@@ -190,11 +203,14 @@ class RandomDistributedCategoryEncoder(Encoder):
 
   def chosenBitIsOk(self, index, currUsageCountMap):
     valid = True
+    """Count overlaps with other sdrs that use this bit"""
     for c in self.bitToCatIndexList[index]:
       if c in currUsageCountMap and currUsageCountMap[c]+1>self.currOverlapLevel:
         valid = False
         break
     
+    """If a valid bit, add tracking info to be used while searching for other
+      bits in this sdr"""
     if valid:
       for c in self.bitToCatIndexList[index]:
         if c in currUsageCountMap:
