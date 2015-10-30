@@ -6,6 +6,7 @@ import numpy
 
 from nupic.data.fieldmeta import FieldMetaType
 from nupic.encoders.base import Encoder
+from nupic.data import SENTINEL_VALUE_FOR_MISSING_DATA
 from nupic.bindings.math import Random as NupicRandom
 
 class RandomDistributedCategoryEncoder(Encoder):
@@ -67,7 +68,6 @@ class RandomDistributedCategoryEncoder(Encoder):
     if self.verbosity > 0:
       self.dump()
 
-
   def __setstate__(self, state):
     self.__dict__.update(state)
 
@@ -78,6 +78,17 @@ class RandomDistributedCategoryEncoder(Encoder):
       self.random = NupicRandom(randomState.randint(sys.maxint))
 
 
+  def getScalars(self, input):
+    """ See method description in base.py """
+    if input == SENTINEL_VALUE_FOR_MISSING_DATA:
+      return numpy.array([0])
+        
+      index = self.bucketIndexMap.get(input, None)
+    if index is None:
+      index = 0
+
+    return numpy.array([index])
+  
   def _seed(self, seed=-1):
     """
     Initialize the random seed

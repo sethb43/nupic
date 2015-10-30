@@ -55,7 +55,7 @@ class RandomDistributedCategoryEncoderTest(unittest.TestCase):
     # the offset
     encoder = RandomDistributedCategoryEncoder(name="encoder", w=21, n=400, )
     results = []
-    numCatsToEncode = 100000
+    numCatsToEncode = 10000
     for x in xrange(numCatsToEncode):
       if x%50==0:
         print x, " SDRs have been encoded."
